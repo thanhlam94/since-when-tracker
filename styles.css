@@ -280,3 +280,34 @@ body {
   border: 1px solid var(--border); background: var(--bg); color: var(--text); outline: none;
 }
 .modal input[type="email"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* ---------- iPhone / mobile web-app fit ---------- */
+html { -webkit-text-size-adjust: 100%; }
+body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+button, .chip, .icon-btn, .log-btn { touch-action: manipulation; }
+/* Prevent iOS auto-zoom on focus (inputs must be >= 16px) */
+.modal input, .modal select, .toolbar input, .toolbar select { font-size: 16px; }
+/* Grid: never overflow very narrow phones (iPhone SE etc.) */
+.grid { grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); }
+/* Notch / home-indicator safe areas */
+.topbar { padding-top: calc(14px + env(safe-area-inset-top)); }
+.app {
+  padding-left: calc(16px + env(safe-area-inset-left));
+  padding-right: calc(16px + env(safe-area-inset-right));
+  padding-bottom: calc(28px + env(safe-area-inset-bottom));
+}
+.modal-backdrop {
+  padding: calc(12px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom));
+}
+.fab {
+  bottom: calc(22px + env(safe-area-inset-bottom));
+  right: calc(22px + env(safe-area-inset-right));
+}
+@media (max-width: 380px) {
+  .card-timer { font-size: 34px; }
+  .hero h1 { font-size: 26px; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+}
