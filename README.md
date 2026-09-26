@@ -16,6 +16,17 @@ Each activity gets a live-ticking counter (days / hours / minutes / seconds) sho
 - 💾 Data stored in your browser (localStorage) — export / import JSON backups
 - 📱 Mobile-friendly, no build step, no dependencies
 
+## Data & sync
+
+- **Signed out:** everything stays in your browser (localStorage), as before.
+- **Signed in** (👤 button, email magic link): activities and the full log
+  history sync to a free Supabase Postgres database (`activities` and
+  `activity_logs` tables, row-level security so each user only sees their
+  own rows). Data follows you across devices.
+- The Supabase `anon` key in `app.js` is the publishable public key — safe
+  to ship in client-side code; RLS policies enforce per-user privacy.
+  Never add the `service_role` key to this repo.
+
 ## Run locally
 
 Just open `index.html` in a browser, or serve the folder:

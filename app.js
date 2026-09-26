@@ -1,6 +1,18 @@
 /* Since When — Activity Tracker
-   Static app. All data lives in localStorage under "sinceWhen.v1". */
+   Static app with optional cloud sync.
+   - Signed out: data lives in localStorage ("sinceWhen.v1") — same as before.
+   - Signed in (email magic link): activities + full log history sync to Supabase
+     (tables: activities, activity_logs; row-level security per user).
+   Log entries are {t: timestamp ms, id: Supabase uuid or null}. */
 "use strict";
+
+/* ---------------- Supabase config ----------------
+   The anon key is public by design (it's the "publishable" key) — the
+   database's row-level security policies ensure users only ever see
+   their own rows. Never put the service_role key here. */
+const SUPABASE_URL = "https://drlbyykbafttshuwrlmj.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRybGJ5eWtiYWZ0dHNodXdybG1qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0NDE3MzIsImV4cCI6MjEwNjAxNzczMn0.a5qFYl8kLUY7Zq3lqKggKrfPGqwnTttrqtUteRlaaPE";
+const SITE_URL = "https://thanhlam94.github.io/since-when-tracker/";
 
 const STORE_KEY = "sinceWhen.v1";
 const THEME_KEY = "sinceWhen.theme";
@@ -10,10 +22,20 @@ const EMOJIS = ["💪","🏃","🚴","🧘","📚","🎸","🎮","🍳","🧹","
 
 let state = { version: 1, activities: [] };
 let ui = { search: "", category: "", sort: "elapsed-desc" };
-let editingActivityId = null;   // modal edit target
-let editingLog = null;          // { activityId, ts }
+let editingActivityId = null;
+let editingLog = null;          // { activityId, entry }
+let db = null;                  // Supabase client
+let sessionUser = null;         // signed-in user or null
+let syncing = false;
 
-/* ---------------- storage ---------------- */
+/* ---------------- storage (local cache) ---------------- */
+function normalizeLogs(logs) {
+  return (logs || [])
+    .map(l => typeof l === "number" ? { t: l, id: null }
+         : { t: Number(l && l.t), id: (l && l.id) || null })
+    .filter(l => Number.isFinite(l.t))
+    .sort((a, b) => a.t - b.t);
+}
 function load() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
@@ -21,10 +43,7 @@ function load() {
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.activities)) {
         state = parsed;
-        // normalize logs: numbers, sorted
-        state.activities.forEach(a => {
-          a.logs = (a.logs || []).map(Number).filter(Number.isFinite).sort((x, y) => x - y);
-        });
+        state.activities.forEach(a => { a.logs = normalizeLogs(a.logs); });
         return;
       }
     }
@@ -33,7 +52,156 @@ function load() {
 }
 function save() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
-  catch (e) { toast("Couldn't save (storage full?)"); }
+  catch (e) { toast("Couldn't save locally (storage full?)"); }
+}
+
+/* ---------------- Supabase data layer ---------------- */
+function dbClient() {
+  if (db) return db;
+  if (!window.supabase) { console.warn("supabase-js not loaded"); return null; }
+  try { db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+  catch (e) { console.warn("supabase init failed", e); db = null; }
+  return db;
+}
+const iso = (t) => new Date(t).toISOString();
+
+async function dbWrap(query, label) {
+  if (!sessionUser || !db) return null;
+  try {
+    const res = await query;
+    if (res.error) throw res.error;
+    return res.data;
+  } catch (e) {
+    console.warn("db " + label + " failed", e);
+    toast("Couldn't reach the database — kept locally");
+    return null;
+  }
+}
+
+/* Pull the user's rows and rebuild state. If the cloud is empty but this
+   browser has local data, push the local data up instead (first sync). */
+async function syncOnSignIn() {
+  if (syncing || !db || !sessionUser) return;
+  syncing = true;
+  try {
+    const acts = await dbWrap(db.from("activities").select("*").order("created_at", { ascending: true }), "fetch activities") || [];
+    const logs = await dbWrap(db.from("activity_logs").select("*").order("logged_at", { ascending: true }), "fetch logs") || [];
+
+    if (acts.length === 0 && state.activities.length > 0) {
+      for (const a of state.activities) {
+        const ins = await dbWrap(
+          db.from("activities").insert({
+            user_id: sessionUser.id, name: a.name, emoji: a.emoji,
+            color: a.color, category: a.category || null, target_days: a.targetDays,
+          }).select("id").single(), "push activity");
+        if (!ins) continue;
+        a.id = ins.id;
+        if (a.logs.length) {
+          const lins = await dbWrap(
+            db.from("activity_logs").insert(a.logs.map(l => ({
+              activity_id: ins.id, user_id: sessionUser.id, logged_at: iso(l.t),
+            }))).select("id,logged_at"), "push logs");
+          if (lins) {
+            const byTime = {};
+            lins.forEach(r => { byTime[new Date(r.logged_at).getTime()] = r.id; });
+            a.logs.forEach(l => { l.id = byTime[l.t] || null; });
+          }
+        }
+      }
+      save();
+      toast("☁️ Your data is now synced to the database");
+    } else {
+      const byAct = {};
+      acts.forEach(r => {
+        byAct[r.id] = {
+          id: r.id, name: r.name, emoji: r.emoji, color: r.color,
+          category: r.category || "", targetDays: r.target_days,
+          createdAt: new Date(r.created_at).getTime(), logs: [],
+        };
+      });
+      logs.forEach(r => {
+        const a = byAct[r.activity_id];
+        if (a) a.logs.push({ t: new Date(r.logged_at).getTime(), id: r.id });
+      });
+      state.activities = Object.values(byAct);
+      state.activities.forEach(a => a.logs.sort((x, y) => x.t - y.t));
+      save();
+    }
+  } catch (e) {
+    console.warn("sync failed", e);
+    toast("Couldn't reach the database — using local data");
+  }
+  syncing = false;
+  render();
+  updateAuthUi();
+}
+
+/* ---------------- auth ---------------- */
+function updateAuthUi() {
+  const btn = $("authBtn");
+  const dot = $("syncDot");
+  if (sessionUser) {
+    const email = sessionUser.email || "?";
+    btn.textContent = email[0].toUpperCase();
+    btn.classList.add("signed-in");
+    btn.title = "Signed in as " + email + " — tap to sign out";
+    dot.classList.remove("hidden");
+  } else {
+    btn.textContent = "👤";
+    btn.classList.remove("signed-in");
+    btn.title = "Sign in to sync across devices";
+    dot.classList.add("hidden");
+  }
+  const so = $("signOutBtn");
+  if (so) so.classList.toggle("hidden", !sessionUser);
+}
+
+async function sendMagicLink(email) {
+  const c = dbClient();
+  if (!c) { toast("Database library couldn't load — check connection"); return; }
+  const { error } = await c.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: SITE_URL },
+  });
+  if (error) { toast("Couldn't send link: " + error.message); return; }
+  $("authStatus").textContent = "📧 Check your email for the sign-in link.";
+  toast("Sign-in link sent");
+}
+
+async function signOut() {
+  if (db) { try { await db.auth.signOut(); } catch (e) {} }
+  sessionUser = null;
+  load();
+  render();
+  updateAuthUi();
+  toast("Signed out — using local data");
+}
+
+async function initDb() {
+  const c = dbClient();
+  if (!c) { updateAuthUi(); return; }
+  c.auth.onAuthStateChange(async (event, sess) => {
+    const was = !!sessionUser;
+    sessionUser = sess && sess.user ? sess.user : null;
+    updateAuthUi();
+    if (sessionUser && (event === "SIGNED_IN" || event === "INITIAL_SESSION") && !was) {
+      await syncOnSignIn();
+    } else if (!sessionUser && was) {
+      load(); render();
+    } else {
+      render();
+    }
+  });
+  try {
+    const { data } = await c.auth.getSession();
+    // onAuthStateChange fires INITIAL_SESSION too; this is a backstop
+    if (data.session && data.session.user && !sessionUser) {
+      sessionUser = data.session.user;
+      updateAuthUi();
+      await syncOnSignIn();
+    }
+  } catch (e) { console.warn("getSession failed", e); }
+  updateAuthUi();
 }
 
 /* ---------------- helpers ---------------- */
@@ -46,7 +214,7 @@ function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 function lastLog(a) { return a.logs.length ? a.logs[a.logs.length - 1] : null; }
-function elapsedMs(a) { const l = lastLog(a); return l == null ? null : Date.now() - l; }
+function elapsedMs(a) { const l = lastLog(a); return l == null ? null : Date.now() - l.t; }
 
 function fmtElapsed(ms) {
   if (ms == null) return null;
@@ -83,13 +251,13 @@ function fmtGap(ms) {
 function avgGap(a) {
   if (a.logs.length < 2) return null;
   let total = 0;
-  for (let i = 1; i < a.logs.length; i++) total += a.logs[i] - a.logs[i - 1];
+  for (let i = 1; i < a.logs.length; i++) total += a.logs[i].t - a.logs[i - 1].t;
   return total / (a.logs.length - 1);
 }
 function longestGap(a) {
   if (a.logs.length < 2) return null;
   let max = 0;
-  for (let i = 1; i < a.logs.length; i++) max = Math.max(max, a.logs[i] - a.logs[i - 1]);
+  for (let i = 1; i < a.logs.length; i++) max = Math.max(max, a.logs[i].t - a.logs[i - 1].t);
   return max;
 }
 function isOverdue(a) {
@@ -97,8 +265,7 @@ function isOverdue(a) {
   return a.targetDays && e != null && e > a.targetDays * DAY_MS;
 }
 function overdueBy(a) {
-  const e = elapsedMs(a);
-  return e - a.targetDays * DAY_MS;
+  return elapsedMs(a) - a.targetDays * DAY_MS;
 }
 
 let toastTimer = null;
@@ -115,23 +282,25 @@ function toast(msg) {
 function sampleData() {
   const now = Date.now();
   const daysAgo = (d, h = 0, m = 0) => now - d * DAY_MS - h * 3600000 - m * 60000;
-  return { version: 1, activities: [
+  const s = { version: 1, activities: [
     { id: uid(), name: "Gym session", emoji: "💪", color: "#6366f1", category: "Health",
       targetDays: 3, createdAt: daysAgo(60),
-      logs: [daysAgo(60), daysAgo(57), daysAgo(54), daysAgo(50), daysAgo(47), daysAgo(44), daysAgo(40), daysAgo(37), daysAgo(33), daysAgo(29), daysAgo(26), daysAgo(22), daysAgo(18), daysAgo(15), daysAgo(11), daysAgo(8), daysAgo(4), daysAgo(1, 3)] },
+      logs: [60,57,54,50,47,44,40,37,33,29,26,22,18,15,11,8,4].map(daysAgo).concat([daysAgo(1,3)]) },
     { id: uid(), name: "Watered the plants", emoji: "🌱", color: "#22c55e", category: "Home",
       targetDays: 7, createdAt: daysAgo(45),
-      logs: [daysAgo(45), daysAgo(38), daysAgo(31), daysAgo(24), daysAgo(16), daysAgo(9)] },
+      logs: [45,38,31,24,16,9].map(daysAgo) },
     { id: uid(), name: "Called mom", emoji: "📞", color: "#f59e0b", category: "Family",
       targetDays: 7, createdAt: daysAgo(50),
-      logs: [daysAgo(50), daysAgo(43), daysAgo(36), daysAgo(29), daysAgo(21), daysAgo(12)] },
+      logs: [50,43,36,29,21,12].map(daysAgo) },
     { id: uid(), name: "Date night", emoji: "❤️", color: "#ec4899", category: "Fun",
       targetDays: 14, createdAt: daysAgo(90),
-      logs: [daysAgo(90), daysAgo(76), daysAgo(61), daysAgo(47), daysAgo(33), daysAgo(19)] },
+      logs: [90,76,61,47,33,19].map(daysAgo) },
     { id: uid(), name: "Read a book", emoji: "📚", color: "#8b5cf6", category: "Growth",
       targetDays: null, createdAt: daysAgo(30),
-      logs: [daysAgo(30), daysAgo(27), daysAgo(25), daysAgo(20), daysAgo(17), daysAgo(13), daysAgo(6), daysAgo(2, 5)] },
+      logs: [30,27,25,20,17,13,6].map(daysAgo).concat([daysAgo(2,5)]) },
   ]};
+  s.activities.forEach(a => { a.logs = normalizeLogs(a.logs); });
+  return s;
 }
 
 /* ---------------- filtering / sorting ---------------- */
@@ -151,7 +320,6 @@ function visibleActivities() {
       default: return 0;
     }
   };
-  // "never logged" floats to top for longest-since; to bottom otherwise handled above via Infinity
   list.sort((a, b) => {
     const ka = key(a), kb = key(b);
     return ka < kb ? -1 : ka > kb ? 1 : 0;
@@ -170,7 +338,7 @@ function renderStats() {
   const now = Date.now();
   const weekAgo = now - 7 * DAY_MS;
   $("statActivities").textContent = state.activities.length;
-  $("statLogs").textContent = state.activities.reduce((n, a) => n + a.logs.filter(t => t >= weekAgo).length, 0);
+  $("statLogs").textContent = state.activities.reduce((n, a) => n + a.logs.filter(l => l.t >= weekAgo).length, 0);
   $("statOverdue").textContent = state.activities.filter(isOverdue).length;
   let longest = null;
   state.activities.forEach(a => {
@@ -240,7 +408,7 @@ function cardEl(a) {
   } else if (overdue) {
     sub = `<p class="card-sub overdue-text">⚠️ Overdue by ${fmtElapsedShort(overdueBy(a))}${targetTxt}</p>`;
   } else {
-    sub = `<p class="card-sub">Last: ${fmtDateTime(l)}${targetTxt}</p>`;
+    sub = `<p class="card-sub">Last: ${fmtDateTime(l.t)}${targetTxt}</p>`;
   }
 
   card.innerHTML = `
@@ -268,7 +436,7 @@ function cardEl(a) {
   return card;
 }
 
-/* live ticking: update every timer each second */
+/* live ticking */
 setInterval(() => {
   document.querySelectorAll("[data-timer-for]").forEach(el => {
     const a = state.activities.find(x => x.id === el.dataset.timerFor);
@@ -279,14 +447,22 @@ setInterval(() => {
 }, 1000);
 
 /* ---------------- actions ---------------- */
-function logNow(id) {
+async function logNow(id) {
   const a = state.activities.find(x => x.id === id);
   if (!a) return;
-  a.logs.push(Date.now());
+  const entry = { t: Date.now(), id: null };
+  a.logs.push(entry);
   save();
   render();
   if (!$("detailModal").classList.contains("hidden") && detailId === id) renderDetail(id);
   toast(`✅ Logged “${a.name}” — clock reset!`);
+  if (sessionUser && db) {
+    const ins = await dbWrap(
+      db.from("activity_logs").insert({
+        activity_id: a.id, user_id: sessionUser.id, logged_at: iso(entry.t),
+      }).select("id").single(), "insert log");
+    if (ins) { entry.id = ins.id; save(); }
+  }
 }
 
 let detailId = null;
@@ -306,7 +482,7 @@ function renderDetail(id) {
   $("dMeta").textContent =
     (a.category ? a.category + " · " : "") +
     (a.targetDays ? "target every " + a.targetDays + " days · " : "") +
-    (l ? "last " + fmtDateTime(l) : "never logged");
+    (l ? "last " + fmtDateTime(l.t) : "never logged");
 
   $("dStats").innerHTML = `
     <div class="dstat"><b>${a.logs.length}</b><span>logs</span></div>
@@ -320,21 +496,25 @@ function renderDetail(id) {
     h.innerHTML = `<li class="empty-h">No logs yet — press “Log it now”.</li>`;
     return;
   }
-  const desc = [...a.logs].sort((x, y) => y - x);
-  desc.forEach((ts, i) => {
+  const desc = [...a.logs].sort((x, y) => y.t - x.t);
+  desc.forEach((entry, i) => {
     const li = document.createElement("li");
     const prev = desc[i + 1];
     li.innerHTML = `
-      <span><span class="h-date">${fmtDateTime(ts)}</span>
-      ${prev != null ? `<span class="h-gap">${fmtGap(ts - prev)} after previous</span>` : `<span class="h-gap">first log</span>`}</span>
+      <span><span class="h-date">${fmtDateTime(entry.t)}</span>
+      ${prev != null ? `<span class="h-gap">${fmtGap(entry.t - prev.t)} after previous</span>` : `<span class="h-gap">first log</span>`}</span>
       <span class="h-actions">
-        <button title="Edit" data-editlog="${ts}">✏️</button>
-        <button title="Delete" data-dellog="${ts}">🗑️</button>
+        <button title="Edit">✏️</button>
+        <button title="Delete">🗑️</button>
       </span>`;
-    li.querySelector("[data-editlog]").onclick = () => openLogEdit(a.id, ts);
-    li.querySelector("[data-dellog]").onclick = () => {
+    const [editBtn, delBtn] = li.querySelectorAll("button");
+    editBtn.onclick = () => openLogEdit(a.id, entry);
+    delBtn.onclick = async () => {
       if (!confirm("Delete this log entry?")) return;
-      a.logs = a.logs.filter(t => t !== ts);
+      a.logs = a.logs.filter(x => x !== entry);
+      if (sessionUser && db && entry.id) {
+        await dbWrap(db.from("activity_logs").delete().eq("id", entry.id), "delete log");
+      }
       save(); render(); renderDetail(a.id);
       toast("Log entry deleted");
     };
@@ -371,26 +551,38 @@ function openActivityModal(id) {
   $("activityModal").classList.remove("hidden");
   setTimeout(() => $("fName").focus(), 50);
 }
-function saveActivityForm(ev) {
+async function saveActivityForm(ev) {
   ev.preventDefault();
   const name = $("fName").value.trim();
   if (!name) return;
   const targetVal = parseFloat($("fTarget").value);
   const targetDays = Number.isFinite(targetVal) && targetVal > 0
     ? Math.round(targetVal * parseFloat($("fTargetUnit").value)) : null;
-  const data = {
-    name,
-    emoji: pickedEmoji,
-    color: $("fColor").value,
-    category: $("fCategory").value.trim(),
-    targetDays,
-  };
+  const category = $("fCategory").value.trim();
+  const fields = { name, emoji: pickedEmoji, color: $("fColor").value, category, targetDays };
+
   if (editingActivityId) {
     const a = state.activities.find(x => x.id === editingActivityId);
-    if (a) Object.assign(a, data);
+    if (a) {
+      Object.assign(a, fields);
+      if (sessionUser && db) {
+        await dbWrap(db.from("activities").update({
+          name, emoji: pickedEmoji, color: fields.color,
+          category: category || null, target_days: targetDays,
+        }).eq("id", a.id), "update activity");
+      }
+    }
     toast("Activity updated");
   } else {
-    state.activities.push(Object.assign({ id: uid(), createdAt: Date.now(), logs: [] }, data));
+    const a = Object.assign({ id: uid(), createdAt: Date.now(), logs: [] }, fields);
+    state.activities.push(a);
+    if (sessionUser && db) {
+      const ins = await dbWrap(db.from("activities").insert({
+        user_id: sessionUser.id, name, emoji: pickedEmoji, color: fields.color,
+        category: category || null, target_days: targetDays,
+      }).select("id").single(), "insert activity");
+      if (ins) a.id = ins.id;
+    }
     toast(`“${name}” added — log it to start the clock!`);
   }
   save();
@@ -399,24 +591,34 @@ function saveActivityForm(ev) {
 }
 
 /* ---- edit single log entry ---- */
-function openLogEdit(activityId, ts) {
-  editingLog = { activityId, ts };
-  const d = new Date(ts);
+function openLogEdit(activityId, entry) {
+  editingLog = { activityId, entry };
+  const d = new Date(entry.t);
   const pad = (n) => String(n).padStart(2, "0");
   $("logDateTime").value =
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   $("logModal").classList.remove("hidden");
 }
-function saveLogEdit() {
+async function saveLogEdit() {
   const v = $("logDateTime").value;
   if (!v || !editingLog) return;
   const a = state.activities.find(x => x.id === editingLog.activityId);
   if (!a) return;
   const newTs = new Date(v).getTime();
   if (!Number.isFinite(newTs)) { toast("Invalid date"); return; }
-  a.logs = a.logs.filter(t => t !== editingLog.ts);
-  a.logs.push(newTs);
-  a.logs.sort((x, y) => x - y);
+  const entry = editingLog.entry;
+  entry.t = newTs;
+  a.logs.sort((x, y) => x.t - y.t);
+  if (sessionUser && db) {
+    if (entry.id) {
+      await dbWrap(db.from("activity_logs").update({ logged_at: iso(newTs) }).eq("id", entry.id), "update log");
+    } else {
+      const ins = await dbWrap(db.from("activity_logs").insert({
+        activity_id: a.id, user_id: sessionUser.id, logged_at: iso(newTs),
+      }).select("id").single(), "insert log");
+      if (ins) entry.id = ins.id;
+    }
+  }
   save();
   $("logModal").classList.add("hidden");
   render(); renderDetail(a.id);
@@ -438,7 +640,7 @@ function exportData() {
 }
 function importData(file) {
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     try {
       const parsed = JSON.parse(reader.result);
       if (!parsed || !Array.isArray(parsed.activities)) throw new Error("bad shape");
@@ -446,9 +648,18 @@ function importData(file) {
       state = parsed;
       state.activities.forEach(a => {
         if (!a.id) a.id = uid();
-        a.logs = (a.logs || []).map(Number).filter(Number.isFinite).sort((x, y) => x - y);
+        a.logs = normalizeLogs(a.logs);
+        // imported entries become local-only until re-synced
+        a.logs.forEach(l => { l.id = null; });
       });
-      save(); render();
+      if (sessionUser && db) {
+        // replace cloud data with the import
+        const ids = state.activities.map(a => a.id);
+        await dbWrap(db.from("activities").delete().in("id", ids), "clear activities");
+        await syncOnSignIn(); // pushes local up since cloud is now empty
+      } else {
+        save(); render();
+      }
       toast("Backup imported");
     } catch (e) { toast("Couldn't read that file"); }
   };
@@ -473,6 +684,7 @@ function init() {
   load();
   initTheme();
   render();
+  updateAuthUi();
 
   $("search").addEventListener("input", (e) => { ui.search = e.target.value; renderGrid(); renderStats(); });
   $("categoryFilter").addEventListener("change", (e) => { ui.category = e.target.value; render(); });
@@ -487,10 +699,13 @@ function init() {
   $("closeDetail").onclick = () => $("detailModal").classList.add("hidden");
   $("dLogNow").onclick = () => { if (detailId) logNow(detailId); };
   $("dEdit").onclick = () => { if (detailId) { $("detailModal").classList.add("hidden"); openActivityModal(detailId); } };
-  $("dDelete").onclick = () => {
+  $("dDelete").onclick = async () => {
     const a = state.activities.find(x => x.id === detailId);
     if (!a) return;
     if (!confirm(`Delete “${a.name}” and all its logs?`)) return;
+    if (sessionUser && db) {
+      await dbWrap(db.from("activities").delete().eq("id", a.id), "delete activity");
+    }
     state.activities = state.activities.filter(x => x.id !== detailId);
     detailId = null;
     save(); render();
@@ -504,6 +719,23 @@ function init() {
   $("themeToggle").onclick = () =>
     applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
 
+  /* auth UI */
+  $("authBtn").onclick = () => {
+    if (sessionUser) {
+      if (confirm(`Signed in as ${sessionUser.email}.\nSign out?`)) signOut();
+    } else {
+      $("authStatus").textContent = "";
+      $("authModal").classList.remove("hidden");
+      setTimeout(() => $("authEmail").focus(), 50);
+    }
+  };
+  $("cancelAuth").onclick = () => $("authModal").classList.add("hidden");
+  $("magicLinkForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const email = $("authEmail").value.trim();
+    if (email) sendMagicLink(email);
+  });
+
   const menu = $("menu");
   $("menuBtn").onclick = (e) => { e.stopPropagation(); menu.classList.toggle("hidden"); };
   document.addEventListener("click", (e) => {
@@ -515,11 +747,18 @@ function init() {
     if (act === "export") exportData();
     if (act === "import") $("importFile").click();
     if (act === "samples") loadSamples();
+    if (act === "signout") signOut();
     if (act === "wipe") {
       if (confirm("Delete ALL activities and logs? This can't be undone.")) {
-        state = { version: 1, activities: [] };
-        save(); render();
-        toast("Everything deleted");
+        (async () => {
+          if (sessionUser && db) {
+            const ids = state.activities.map(a => a.id);
+            if (ids.length) await dbWrap(db.from("activities").delete().in("id", ids), "wipe");
+          }
+          state = { version: 1, activities: [] };
+          save(); render();
+          toast("Everything deleted");
+        })();
       }
     }
   }));
@@ -528,20 +767,29 @@ function init() {
     e.target.value = "";
   });
 
-  // close modals on backdrop click / Escape
   document.querySelectorAll(".modal-backdrop").forEach(bd => {
     bd.addEventListener("click", (e) => { if (e.target === bd) bd.classList.add("hidden"); });
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") document.querySelectorAll(".modal-backdrop").forEach(bd => bd.classList.add("hidden"));
   });
+
+  /* cloud sync (non-blocking) */
+  initDb();
 }
 
 function loadSamples() {
   if (state.activities.length && !confirm("Load sample data? This replaces your current data.")) return;
-  state = sampleData();
-  save(); render();
-  toast("Sample data loaded");
+  (async () => {
+    if (sessionUser && db) {
+      const ids = state.activities.map(a => a.id);
+      if (ids.length) await dbWrap(db.from("activities").delete().in("id", ids), "clear");
+    }
+    state = sampleData();
+    save(); render();
+    if (sessionUser && db) await syncOnSignIn(); // pushes samples up
+    toast("Sample data loaded");
+  })();
 }
 
 document.addEventListener("DOMContentLoaded", init);

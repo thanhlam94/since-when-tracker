@@ -20,6 +20,8 @@
       </div>
     </div>
     <div class="topbar-actions">
+      <span id="syncDot" class="sync-dot hidden" title="Synced to your database">☁️</span>
+      <button id="authBtn" class="icon-btn auth-btn" title="Sign in to sync across devices" aria-label="Sign in">👤</button>
       <button id="themeToggle" class="icon-btn" title="Toggle dark / light mode" aria-label="Toggle theme">🌙</button>
       <button id="menuBtn" class="icon-btn" title="Menu" aria-label="Menu">⋯</button>
     </div>
@@ -27,6 +29,7 @@
       <button data-action="export">⬇️ Export backup (JSON)</button>
       <button data-action="import">⬆️ Import backup</button>
       <button data-action="samples">✨ Load sample data</button>
+      <button data-action="signout" id="signOutBtn" class="hidden">👋 Sign out</button>
       <button data-action="wipe" class="danger">🗑️ Delete everything</button>
     </nav>
     <input type="file" id="importFile" accept="application/json" hidden>
@@ -70,9 +73,31 @@
   </main>
 
   <footer class="footer">
-    <span>Data stays in your browser (localStorage). Export backups to keep it safe.</span>
+    <span id="footerText">Sign in (👤 above) to sync your data across devices. Otherwise it stays in this browser.</span>
   </footer>
 </div>
+
+<!-- Sign-in modal -->
+<div id="authModal" class="modal-backdrop hidden">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+    <h2 id="authTitle">Sign in to sync</h2>
+    <p class="muted" style="margin:0 0 14px">Your activities and full log history sync to your private database and follow you across devices. Each person who signs in gets their own private space.</p>
+    <form id="magicLinkForm">
+      <label>Email
+        <input type="email" id="authEmail" placeholder="you@gmail.com" required autocomplete="email">
+      </label>
+      <p id="authStatus" class="auth-status" aria-live="polite"></p>
+      <div class="modal-actions">
+        <button type="button" class="ghost-btn" id="cancelAuth">Cancel</button>
+        <button type="submit" class="primary-btn">📧 Email me a sign-in link</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<!-- Add / edit activity modal -->
 
 <!-- Add / edit activity modal -->
 <div id="activityModal" class="modal-backdrop hidden">
