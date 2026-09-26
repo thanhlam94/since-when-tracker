@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Since When — Activity Tracker</title>
+<meta name="description" content="Since When — track how long it's been since you last did anything. Log activities and watch live counters.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏱️</text></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">⏱️</span>
+      <div>
+        <h1>Since When</h1>
+        <p class="tagline">How long has it <em>really</em> been?</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button id="themeToggle" class="icon-btn" title="Toggle dark / light mode" aria-label="Toggle theme">🌙</button>
+      <button id="menuBtn" class="icon-btn" title="Menu" aria-label="Menu">⋯</button>
+    </div>
+    <nav id="menu" class="menu hidden">
+      <button data-action="export">⬇️ Export backup (JSON)</button>
+      <button data-action="import">⬆️ Import backup</button>
+      <button data-action="samples">✨ Load sample data</button>
+      <button data-action="wipe" class="danger">🗑️ Delete everything</button>
+    </nav>
+    <input type="file" id="importFile" accept="application/json" hidden>
+  </header>
+
+  <section class="stats-strip" id="statsStrip">
+    <div class="stat"><span class="stat-value" id="statActivities">0</span><span class="stat-label">activities</span></div>
+    <div class="stat"><span class="stat-value" id="statLogs">0</span><span class="stat-label">logs this week</span></div>
+    <div class="stat"><span class="stat-value" id="statOverdue">0</span><span class="stat-label">overdue</span></div>
+    <div class="stat"><span class="stat-value" id="statLongest">–</span><span class="stat-label">longest wait</span></div>
+  </section>
+
+  <section class="controls">
+    <div class="search-wrap">
+      <input type="search" id="search" placeholder="🔍 Search activities…" autocomplete="off">
+    </div>
+    <div class="control-row">
+      <select id="categoryFilter" aria-label="Filter by category">
+        <option value="">All categories</option>
+      </select>
+      <select id="sortSelect" aria-label="Sort activities">
+        <option value="elapsed-desc">⏳ Longest since first</option>
+        <option value="elapsed-asc">⚡ Most recent first</option>
+        <option value="name">🔤 A → Z</option>
+        <option value="count-desc">🔥 Most logged first</option>
+      </select>
+      <button id="addBtn" class="primary-btn">＋ New activity</button>
+    </div>
+    <div class="chips" id="categoryChips"></div>
+  </section>
+
+  <main>
+    <div id="grid" class="grid"></div>
+    <div id="empty" class="empty hidden">
+      <div class="empty-icon">⏱️</div>
+      <h2>No activities yet</h2>
+      <p>Track anything: workouts, date nights, watering plants, calling mom…<br>Hit <strong>＋ New activity</strong> to start your first counter.</p>
+      <button class="primary-btn" id="emptyAddBtn">＋ New activity</button>
+      <button class="ghost-btn" id="emptySampleBtn">or load sample data</button>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <span>Data stays in your browser (localStorage). Export backups to keep it safe.</span>
+  </footer>
+</div>
+
+<!-- Add / edit activity modal -->
+<div id="activityModal" class="modal-backdrop hidden">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h2 id="modalTitle">New activity</h2>
+    <form id="activityForm">
+      <label>Name
+        <input type="text" id="fName" placeholder="e.g. Gym session" maxlength="60" required>
+      </label>
+      <div class="form-row">
+        <label>Icon
+          <div class="emoji-picker" id="emojiPicker"></div>
+        </label>
+        <label>Color
+          <input type="color" id="fColor" value="#6366f1">
+        </label>
+      </div>
+      <label>Category
+        <input type="text" id="fCategory" placeholder="e.g. Health, Home, Fun" maxlength="30" list="categoryList">
+        <datalist id="categoryList"></datalist>
+      </label>
+      <label>Target frequency <span class="hint">(optional — flags overdue)</span>
+        <div class="target-row">
+          <input type="number" id="fTarget" min="1" max="3650" placeholder="—">
+          <select id="fTargetUnit">
+            <option value="1">days</option>
+            <option value="7">weeks</option>
+            <option value="30.44">months</option>
+          </select>
+        </div>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="ghost-btn" id="cancelModal">Cancel</button>
+        <button type="submit" class="primary-btn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Activity detail modal -->
+<div id="detailModal" class="modal-backdrop hidden">
+  <div class="modal modal-wide" role="dialog" aria-modal="true">
+    <div class="detail-head">
+      <div class="detail-title">
+        <span id="dEmoji" class="detail-emoji"></span>
+        <div>
+          <h2 id="dName"></h2>
+          <p id="dMeta" class="muted"></p>
+        </div>
+      </div>
+      <button class="icon-btn" id="closeDetail" aria-label="Close">✕</button>
+    </div>
+    <div class="detail-stats" id="dStats"></div>
+    <div class="detail-actions">
+      <button class="primary-btn" id="dLogNow">✅ Log it now</button>
+      <button class="ghost-btn" id="dEdit">✏️ Edit</button>
+      <button class="ghost-btn danger-text" id="dDelete">🗑️ Delete</button>
+    </div>
+    <h3>History</h3>
+    <ul id="dHistory" class="history"></ul>
+  </div>
+</div>
+
+<!-- Log timestamp modal (edit a history entry) -->
+<div id="logModal" class="modal-backdrop hidden">
+  <div class="modal" role="dialog" aria-modal="true">
+    <h2>Edit log entry</h2>
+    <label>Date &amp; time
+      <input type="datetime-local" id="logDateTime">
+    </label>
+    <div class="modal-actions">
+      <button class="ghost-btn" id="cancelLog">Cancel</button>
+      <button class="primary-btn" id="saveLog">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
