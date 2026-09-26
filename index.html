@@ -13,7 +13,7 @@
 <title>Since When — Activity Tracker</title>
 <meta name="description" content="Since When — track how long it's been since you last did anything. Log activities and watch live counters.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏱️</text></svg>">
-<link rel="stylesheet" href="styles.css?v=6">
+<link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
 <div class="bg-blobs" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
@@ -37,6 +37,7 @@
       <button data-action="export">⬇️ Export backup (JSON)</button>
       <button data-action="import">⬆️ Import backup</button>
       <button data-action="samples">✨ Load sample data</button>
+      <button data-action="heatmap">📅 Year in review</button>
       <button data-action="signout" id="signOutBtn" class="hidden">👋 Sign out</button>
       <button data-action="wipe" class="danger">🗑️ Delete everything</button>
     </nav>
@@ -165,6 +166,40 @@
   </div>
 </div>
 
-<script src="app.js?v=5"></script>
+<!-- Year-in-review heatmap modal -->
+<div id="heatmapModal" class="modal-backdrop hidden">
+  <div class="modal modal-wide" role="dialog" aria-modal="true">
+    <div class="detail-head">
+      <div class="detail-title">
+        <div>
+          <h2>Year in review</h2>
+          <p id="heatmapSub" class="muted"></p>
+        </div>
+      </div>
+      <button class="icon-btn" id="closeHeatmap" aria-label="Close">✕</button>
+    </div>
+    <div class="heatmap-scroll"><div class="heatmap" id="heatmap"></div></div>
+    <div class="heatmap-legend"><span>Less</span><i class="hcell lvl0"></i><i class="hcell lvl1"></i><i class="hcell lvl2"></i><i class="hcell lvl3"></i><span>More</span></div>
+    <h3 id="heatmapDayTitle">Today</h3>
+    <ul id="heatmapDayList" class="history"></ul>
+  </div>
+</div>
+
+<!-- Log note modal -->
+<div id="noteModal" class="modal-backdrop hidden">
+  <div class="modal" role="dialog" aria-modal="true">
+    <h2>Log note</h2>
+    <p class="muted" id="noteContext" style="margin:0 0 4px"></p>
+    <label>Note
+      <textarea id="noteText" rows="3" maxlength="280" placeholder="e.g. Leg day, felt strong"></textarea>
+    </label>
+    <div class="modal-actions">
+      <button class="ghost-btn" id="cancelNote">Cancel</button>
+      <button class="primary-btn" id="saveNote">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js?v=6"></script>
 </body>
 </html>

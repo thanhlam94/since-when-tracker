@@ -343,6 +343,30 @@ button, .chip, .icon-btn, .log-btn { touch-action: manipulation; }
 
 .hidden { display: none !important; }
 
+.modal textarea {
+  width: 100%; margin-top: 7px; padding: 13px 15px; font-size: 16px; border-radius: 16px;
+  border: 1px solid var(--glass-border); background: rgba(127, 127, 140, 0.14); color: var(--text); outline: none;
+  box-shadow: var(--glass-inset); font-family: inherit; resize: vertical;
+}
+.modal textarea:focus { border-color: var(--accent); box-shadow: var(--glass-inset), 0 0 0 4px var(--accent-soft); }
+.h-note { display: block; font-size: 13px; color: var(--muted); margin-top: 3px; font-style: italic; }
+
+/* ---------- Year-in-review heatmap ---------- */
+.heatmap-scroll { overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+.heatmap { display: flex; gap: 3px; width: max-content; padding: 6px 2px 2px; }
+.hweek { display: flex; flex-direction: column; gap: 3px; }
+.hmonth { height: 14px; font-size: 10px; color: var(--muted); line-height: 14px; white-space: nowrap; }
+.hcell { width: 12px; height: 12px; border-radius: 3.5px; border: none; padding: 0; cursor: pointer; }
+.hcell.lvl0 { background: rgba(127, 127, 140, 0.16); }
+.hcell.lvl1 { background: color-mix(in srgb, var(--accent) 32%, transparent); }
+.hcell.lvl2 { background: color-mix(in srgb, var(--accent) 58%, transparent); }
+.hcell.lvl3 { background: color-mix(in srgb, var(--accent) 88%, transparent); }
+.hcell.future { background: transparent; cursor: default; }
+.hcell.today { outline: 2px solid var(--accent); outline-offset: 1px; }
+.hcell.selected { outline: 2px solid var(--text); outline-offset: 1px; }
+.heatmap-legend { display: flex; align-items: center; justify-content: flex-end; gap: 4px; font-size: 11px; color: var(--muted); margin-top: 10px; }
+.heatmap-legend .hcell { display: inline-block; cursor: default; }
+
 /* ---------- Small screens: compact phone layout ---------- */
 @media (max-width: 560px) {
   .app { padding-left: calc(10px + env(safe-area-inset-left)); padding-right: calc(10px + env(safe-area-inset-right)); }

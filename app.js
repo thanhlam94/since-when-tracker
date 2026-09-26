@@ -31,8 +31,8 @@ let syncing = false;
 /* ---------------- storage (local cache) ---------------- */
 function normalizeLogs(logs) {
   return (logs || [])
-    .map(l => typeof l === "number" ? { t: l, id: null }
-         : { t: Number(l && l.t), id: (l && l.id) || null })
+    .map(l => typeof l === "number" ? { t: l, id: null, n: "" }
+         : { t: Number(l && l.t), id: (l && l.id) || null, n: (l && l.n) || "" })
     .filter(l => Number.isFinite(l.t))
     .sort((a, b) => a.t - b.t);
 }
@@ -100,6 +100,7 @@ async function syncOnSignIn() {
           const lins = await dbWrap(
             db.from("activity_logs").insert(a.logs.map(l => ({
               activity_id: ins.id, user_id: sessionUser.id, logged_at: iso(l.t),
+              note: l.n || null,
             }))).select("id,logged_at"), "push logs");
           if (lins) {
             const byTime = {};
@@ -121,7 +122,7 @@ async function syncOnSignIn() {
       });
       logs.forEach(r => {
         const a = byAct[r.activity_id];
-        if (a) a.logs.push({ t: new Date(r.logged_at).getTime(), id: r.id });
+        if (a) a.logs.push({ t: new Date(r.logged_at).getTime(), id: r.id, n: r.note || "" });
       });
       state.activities = Object.values(byAct);
       state.activities.forEach(a => a.logs.sort((x, y) => x.t - y.t));
@@ -407,7 +408,7 @@ setInterval(() => {
 async function logNow(id) {
   const a = state.activities.find(x => x.id === id);
   if (!a) return;
-  const entry = { t: Date.now(), id: null };
+  const entry = { t: Date.now(), id: null, n: "" };
   a.logs.push(entry);
   save();
   render();
@@ -425,6 +426,7 @@ async function logNow(id) {
     const ins = await dbWrap(
       db.from("activity_logs").insert({
         activity_id: a.id, user_id: sessionUser.id, logged_at: iso(entry.t),
+        note: null,
       }).select("id").single(), "insert log");
     if (ins) { entry.id = ins.id; save(); }
   }
@@ -467,12 +469,15 @@ function renderDetail(id) {
     const prev = desc[i + 1];
     li.innerHTML = `
       <span><span class="h-date">${fmtDateTime(entry.t)}</span>
-      ${prev != null ? `<span class="h-gap">${fmtGap(entry.t - prev.t)} after previous</span>` : `<span class="h-gap">first log</span>`}</span>
+      ${prev != null ? `<span class="h-gap">${fmtGap(entry.t - prev.t)} after previous</span>` : `<span class="h-gap">first log</span>`}
+      ${entry.n ? `<span class="h-note">“${esc(entry.n)}”</span>` : ""}</span>
       <span class="h-actions">
+        <button title="Add note">📝</button>
         <button title="Edit">✏️</button>
         <button title="Delete">🗑️</button>
       </span>`;
-    const [editBtn, delBtn] = li.querySelectorAll("button");
+    const [noteBtn, editBtn, delBtn] = li.querySelectorAll("button");
+    noteBtn.onclick = () => openNoteModal(a.id, entry);
     editBtn.onclick = () => openLogEdit(a.id, entry);
     delBtn.onclick = async () => {
       if (!confirm("Delete this log entry?")) return;
@@ -580,6 +585,7 @@ async function saveLogEdit() {
     } else {
       const ins = await dbWrap(db.from("activity_logs").insert({
         activity_id: a.id, user_id: sessionUser.id, logged_at: iso(newTs),
+        note: entry.n || null,
       }).select("id").single(), "insert log");
       if (ins) entry.id = ins.id;
     }
@@ -588,6 +594,115 @@ async function saveLogEdit() {
   $("logModal").classList.add("hidden");
   render(); renderDetail(a.id);
   toast("Log entry updated");
+}
+
+/* ---- log notes ---- */
+let editingNote = null;
+function openNoteModal(activityId, entry) {
+  editingNote = { activityId, entry };
+  const a = state.activities.find(x => x.id === activityId);
+  $("noteContext").textContent = (a ? a.name + " · " : "") + fmtDateTime(entry.t);
+  $("noteText").value = entry.n || "";
+  $("noteModal").classList.remove("hidden");
+  setTimeout(() => $("noteText").focus(), 60);
+}
+async function saveNote() {
+  if (!editingNote) return;
+  const a = state.activities.find(x => x.id === editingNote.activityId);
+  if (!a) return;
+  const entry = editingNote.entry;
+  entry.n = $("noteText").value.trim();
+  if (sessionUser && db && entry.id) {
+    await dbWrap(db.from("activity_logs").update({ note: entry.n || null }).eq("id", entry.id), "update note");
+  }
+  save();
+  $("noteModal").classList.add("hidden");
+  editingNote = null;
+  render(); renderDetail(a.id);
+  toast(entry.n ? "📝 Note saved" : "Note removed");
+}
+
+/* ---------------- year-in-review heatmap ---------------- */
+const dayKey = (t) => {
+  const d = new Date(t);
+  return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate();
+};
+const fmtTime = (t) =>
+  new Date(t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+
+function openHeatmap() {
+  buildHeatmap();
+  $("heatmapModal").classList.remove("hidden");
+}
+function buildHeatmap() {
+  const map = {};
+  state.activities.forEach(a => a.logs.forEach(entry => {
+    const k = dayKey(entry.t);
+    (map[k] = map[k] || []).push({ a, entry });
+  }));
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = new Date(today);
+  start.setDate(start.getDate() - (52 * 7 - 1) - start.getDay()); // align to Sunday
+  const heat = $("heatmap");
+  heat.innerHTML = "";
+  let prevMonth = -1, total = 0;
+  for (let w = 0; w < 53; w++) {
+    const col = document.createElement("div");
+    col.className = "hweek";
+    const weekStart = new Date(start); weekStart.setDate(weekStart.getDate() + w * 7);
+    const m = weekStart.getMonth();
+    const label = document.createElement("span");
+    label.className = "hmonth";
+    label.textContent = m !== prevMonth ? weekStart.toLocaleString(undefined, { month: "short" }) : "";
+    prevMonth = m;
+    col.appendChild(label);
+    for (let d = 0; d < 7; d++) {
+      const dt = new Date(start); dt.setDate(dt.getDate() + w * 7 + d);
+      const cell = document.createElement("button");
+      cell.type = "button";
+      if (dt > today) {
+        cell.className = "hcell future";
+        cell.disabled = true;
+      } else {
+        const k = dayKey(dt.getTime());
+        const items = map[k] || [];
+        total += items.length;
+        cell.className = "hcell lvl" + (items.length === 0 ? 0 : items.length === 1 ? 1 : items.length <= 3 ? 2 : 3);
+        cell.dataset.t = dt.getTime();
+        if (dt.getTime() === today.getTime()) cell.classList.add("today");
+        cell.title = dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) +
+          ` — ${items.length} log${items.length === 1 ? "" : "s"}`;
+        cell.onclick = () => selectHeatDay(dt.getTime(), items);
+      }
+      col.appendChild(cell);
+    }
+    heat.appendChild(col);
+  }
+  $("heatmapSub").textContent = `${total} log${total === 1 ? "" : "s"} in the last year`;
+  const tk = dayKey(today.getTime());
+  selectHeatDay(today.getTime(), map[tk] || []);
+  const scroller = heat.parentElement;
+  scroller.scrollLeft = scroller.scrollWidth;
+}
+function selectHeatDay(t, items) {
+  document.querySelectorAll("#heatmap .hcell.selected").forEach(c => c.classList.remove("selected"));
+  const cell = document.querySelector(`#heatmap .hcell[data-t="${t}"]`);
+  if (cell) cell.classList.add("selected");
+  const d = new Date(t);
+  $("heatmapDayTitle").textContent =
+    d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  const ul = $("heatmapDayList");
+  ul.innerHTML = "";
+  if (!items.length) {
+    ul.innerHTML = `<li class="empty-h">Nothing logged this day.</li>`;
+    return;
+  }
+  [...items].sort((x, y) => x.entry.t - y.entry.t).forEach(({ a, entry }) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span><span class="h-date">${esc(a.emoji || "⏱️")} ${esc(a.name)}</span>` +
+      `<span class="h-gap">${fmtTime(entry.t)}${entry.n ? " · “" + esc(entry.n) + "”" : ""}</span></span>`;
+    ul.appendChild(li);
+  });
 }
 
 /* ---------------- export / import / wipe ---------------- */
@@ -711,6 +826,7 @@ function init() {
     if (act === "export") exportData();
     if (act === "import") $("importFile").click();
     if (act === "samples") loadSamples();
+  if (act === "heatmap") openHeatmap();
     if (act === "signout") signOut();
     if (act === "wipe") {
       if (confirm("Delete ALL activities and logs? This can't be undone.")) {
@@ -730,6 +846,10 @@ function init() {
     if (e.target.files[0]) importData(e.target.files[0]);
     e.target.value = "";
   });
+
+  $("cancelNote").onclick = () => $("noteModal").classList.add("hidden");
+  $("saveNote").onclick = saveNote;
+  $("closeHeatmap").onclick = () => $("heatmapModal").classList.add("hidden");
 
   document.querySelectorAll(".modal-backdrop").forEach(bd => {
     bd.addEventListener("click", (e) => { if (e.target === bd) bd.classList.add("hidden"); });
