@@ -60,11 +60,11 @@ body {
 
 /* ---------- Glass primitive ---------- */
 .glass {
-  background: var(--glass-bg);.topbar {
+  background: var(--glass-bg);
   position: sticky; top: calc(10px + env(safe-area-inset-top)); z-index: 20;
   display: flex; align-items: center; justify-content: space-between;
   margin: 10px 0 18px; padding: 12px 14px 12px 18px;
-  border-radius: 24px;
+  border-radius: 24px; padding-top: calc(12px + env(safe-area-inset-top)); } /* Glass background lives on ::before, NOT on the sticky element itself: iOS standalone webviews fail to paint children of sticky + backdrop-filter containers (header renders as an empty blurred slab). */ .topbar::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--glass-bg); -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%); border: 1px solid var(--glass-border); box-shadow: var(--glass-inset), var(--glass-shadow); }
   padding-top: calc(12px + env(safe-area-inset-top));
 }
 /* Glass background lives on ::before, NOT on the sticky element itself:
@@ -92,7 +92,7 @@ body {
   position: sticky; top: 10px; z-index: 20;
   display: flex; align-items: center; justify-content: space-between;
   margin: 10px 0 18px; padding: 12px 14px 12px 18px;
-  border-radius: 24px;
+  border-radius: 24px; padding-top: calc(12px + env(safe-area-inset-top)); } /* Glass background lives on ::before, NOT on the sticky element itself: iOS standalone webviews fail to paint children of sticky + backdrop-filter containers (header renders as an empty blurred slab). */ .topbar::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--glass-bg); -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%); border: 1px solid var(--glass-border); box-shadow: var(--glass-inset), var(--glass-shadow); }
   padding-top: calc(12px + env(safe-area-inset-top));
   background: var(--glass-bg);
   -webkit-backdrop-filter: blur(28px) saturate(180%);
@@ -388,7 +388,7 @@ button, .chip, .icon-btn, .log-btn { touch-action: manipulation; }
 /* ---------- Small screens: compact phone layout ---------- */
 @media (max-width: 560px) {
   .app { padding-left: calc(10px + env(safe-area-inset-left)); padding-right: calc(10px + env(safe-area-inset-right)); }
-  .topbar { padding: 8px 10px 8px 12px; border-radius: 20px; margin: 8px 0 12px; }
+  .topbar { padding: 8px 10px 8px 12px; padding-top: calc(8px + env(safe-area-inset-top)); border-radius: 20px; margin: 8px 0 12px; }
   .brand-icon { width: 40px; height: 40px; font-size: 24px; border-radius: 13px; }
   .brand h1 { font-size: 18px; }
   .tagline { font-size: 11px; }
