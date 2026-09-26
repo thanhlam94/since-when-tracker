@@ -653,7 +653,8 @@ function init() {
 
   $("search").addEventListener("input", (e) => { ui.search = e.target.value; renderGrid(); });
 
-  $("fab").onclick = () => openActivityModal(null);
+  const fab = $("fab");
+  if (fab) fab.onclick = () => openActivityModal(null);
   $("emptyAddBtn").onclick = () => openActivityModal(null);
   $("emptySampleBtn").onclick = loadSamples;
   $("activityForm").addEventListener("submit", saveActivityForm);
