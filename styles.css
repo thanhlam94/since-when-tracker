@@ -343,11 +343,32 @@ button, .chip, .icon-btn, .log-btn { touch-action: manipulation; }
 
 .hidden { display: none !important; }
 
-/* ---------- Small screens ---------- */
+/* ---------- Small screens: compact phone layout ---------- */
 @media (max-width: 560px) {
-  .card-timer { font-size: 32px; }
+  .app { padding-left: calc(10px + env(safe-area-inset-left)); padding-right: calc(10px + env(safe-area-inset-right)); }
+  .topbar { padding: 8px 10px 8px 12px; border-radius: 20px; margin: 8px 0 12px; }
+  .brand-icon { width: 40px; height: 40px; font-size: 24px; border-radius: 13px; }
+  .brand h1 { font-size: 18px; }
+  .tagline { font-size: 11px; }
+  .icon-btn { width: 36px; height: 36px; font-size: 15px; }
+  .controls { margin-bottom: 12px; }
+  .search-wrap input { padding: 11px 15px; border-radius: 16px; }
+  .grid { gap: 10px; }
+  .card { padding: 14px 15px; border-radius: 22px; }
+  .card-emoji { width: 40px; height: 40px; font-size: 22px; border-radius: 12px; }
+  .card-name { font-size: 15px; }
+  .card-since-label { margin: 10px 0 1px; font-size: 10px; }
+  .card-timer { font-size: 27px; }
+  .card-sub { margin: 0 0 10px; font-size: 12px; min-height: 0; }
+  .log-btn { padding: 11px; font-size: 14px; border-radius: 15px; }
+  .card-stats { margin-top: 9px; font-size: 11px; gap: 10px; }
+  .fab { width: 56px; height: 56px; }
+  .fab-plus { font-size: 26px; }
+  .empty { padding: 40px 18px; }
+  .modal { padding: 20px; border-radius: 24px; }
   .detail-stats { grid-template-columns: repeat(2, 1fr); }
   .modal-backdrop { align-items: flex-end; }
+  .footer { margin-top: 24px; }
 }
 /* Notch / home-indicator safe areas */
 .app {
