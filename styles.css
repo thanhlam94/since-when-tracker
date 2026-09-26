@@ -60,7 +60,25 @@ body {
 
 /* ---------- Glass primitive ---------- */
 .glass {
+  background: var(--glass-bg);.topbar {
+  position: sticky; top: calc(10px + env(safe-area-inset-top)); z-index: 20;
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 10px 0 18px; padding: 12px 14px 12px 18px;
+  border-radius: 24px;
+  padding-top: calc(12px + env(safe-area-inset-top));
+}
+/* Glass background lives on ::before, NOT on the sticky element itself:
+   iOS standalone webviews fail to paint children of sticky + backdrop-filter
+   containers (header renders as an empty blurred slab). */
+.topbar::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  border-radius: inherit;
   background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-inset), var(--glass-shadow);
+}
   -webkit-backdrop-filter: blur(28px) saturate(180%);
   backdrop-filter: blur(28px) saturate(180%);
   border: 1px solid var(--glass-border);
