@@ -21,7 +21,7 @@ const DAY_MS = 86400000;
 const EMOJIS = ["💪","🏃","🚴","🧘","📚","🎸","🎮","🍳","🧹","🌱","💧","🐕","📞","💤","✈️","🎨","💰","🧠","❤️","🎬","🍺","☕","🧸","💊","🚗","🧺","🎯","🌙","🔥","⭐","🏖️","📝"];
 
 let state = { version: 1, activities: [] };
-let ui = { search: "", category: "", sort: "elapsed-desc" };
+let ui = { search: "" };
 let editingActivityId = null;
 let editingLog = null;          // { activityId, entry }
 let db = null;                  // Supabase client
@@ -303,25 +303,15 @@ function sampleData() {
   return s;
 }
 
-/* ---------------- filtering / sorting ---------------- */
+/* ---------------- filtering ---------------- */
 function visibleActivities() {
   const q = ui.search.trim().toLowerCase();
-  let list = state.activities.filter(a => {
-    const okQ = !q || a.name.toLowerCase().includes(q) || (a.category || "").toLowerCase().includes(q);
-    const okC = !ui.category || (a.category || "") === ui.category;
-    return okQ && okC;
-  });
-  const key = (a) => {
-    switch (ui.sort) {
-      case "elapsed-desc": { const e = elapsedMs(a); return e == null ? Infinity : -e; }
-      case "elapsed-asc":  { const e = elapsedMs(a); return e == null ? Infinity : e; }
-      case "name":         return a.name.toLowerCase();
-      case "count-desc":    return -a.logs.length;
-      default: return 0;
-    }
-  };
+  const list = state.activities.filter(a =>
+    !q || a.name.toLowerCase().includes(q) || (a.category || "").toLowerCase().includes(q));
+  // longest since last first; never-logged sink to the end
   list.sort((a, b) => {
-    const ka = key(a), kb = key(b);
+    const ea = elapsedMs(a), eb = elapsedMs(b);
+    const ka = ea == null ? Infinity : -ea, kb = eb == null ? Infinity : -eb;
     return ka < kb ? -1 : ka > kb ? 1 : 0;
   });
   return list;
@@ -329,23 +319,8 @@ function visibleActivities() {
 
 /* ---------------- rendering ---------------- */
 function render() {
-  renderStats();
-  renderCategories();
+  renderCategoryDatalist();
   renderGrid();
-}
-
-function renderStats() {
-  const now = Date.now();
-  const weekAgo = now - 7 * DAY_MS;
-  $("statActivities").textContent = state.activities.length;
-  $("statLogs").textContent = state.activities.reduce((n, a) => n + a.logs.filter(l => l.t >= weekAgo).length, 0);
-  $("statOverdue").textContent = state.activities.filter(isOverdue).length;
-  let longest = null;
-  state.activities.forEach(a => {
-    const e = elapsedMs(a);
-    if (e != null && (longest == null || e > longest)) longest = e;
-  });
-  $("statLongest").textContent = longest == null ? "–" : fmtElapsedShort(longest);
 }
 
 function allCategories() {
@@ -354,29 +329,10 @@ function allCategories() {
   return [...set].sort((x, y) => x.localeCompare(y));
 }
 
-function renderCategories() {
-  const cats = allCategories();
-  const sel = $("categoryFilter");
-  const prev = sel.value;
-  sel.innerHTML = `<option value="">All categories</option>` +
-    cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
-  sel.value = cats.includes(prev) ? prev : "";
-  ui.category = sel.value;
-
-  const chips = $("categoryChips");
-  chips.innerHTML = "";
-  const mk = (label, value, active) => {
-    const b = document.createElement("button");
-    b.className = "chip" + (active ? " active" : "");
-    b.textContent = label;
-    b.onclick = () => { ui.category = value; sel.value = value; render(); };
-    return b;
-  };
-  chips.appendChild(mk("All", "", ui.category === ""));
-  cats.forEach(c => chips.appendChild(mk(c, c, ui.category === c)));
-
+/* suggestions for the category field in the add/edit form */
+function renderCategoryDatalist() {
   const dl = $("categoryList");
-  dl.innerHTML = cats.map(c => `<option value="${esc(c)}">`).join("");
+  if (dl) dl.innerHTML = allCategories().map(c => `<option value="${esc(c)}">`).join("");
 }
 
 function renderGrid() {
@@ -385,7 +341,7 @@ function renderGrid() {
   $("empty").classList.toggle("hidden", !(state.activities.length === 0));
   grid.innerHTML = "";
   if (!list.length && state.activities.length) {
-    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">🔍</div><h2>No matches</h2><p>Try a different search or category.</p></div>`;
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">🔍</div><h2>No matches</h2><p>Try a different search.</p></div>`;
     return;
   }
   list.forEach(a => grid.appendChild(cardEl(a)));
@@ -399,6 +355,7 @@ function cardEl(a) {
 
   const card = document.createElement("div");
   card.className = "card" + (overdue ? " overdue" : "");
+  card.dataset.activityId = a.id;
   card.style.setProperty("--card-color", a.color || "#6366f1");
 
   const targetTxt = a.targetDays ? ` · target every ${a.targetDays}d` : "";
@@ -456,6 +413,14 @@ async function logNow(id) {
   render();
   if (!$("detailModal").classList.contains("hidden") && detailId === id) renderDetail(id);
   toast(`✅ Logged “${a.name}” — clock reset!`);
+  // satisfying pulse on the card that was just logged
+  const el = document.querySelector(`[data-activity-id="${CSS.escape(id)}"]`);
+  if (el) {
+    el.classList.remove("just-logged");
+    void el.offsetWidth;
+    el.classList.add("just-logged");
+    setTimeout(() => el.classList.remove("just-logged"), 900);
+  }
   if (sessionUser && db) {
     const ins = await dbWrap(
       db.from("activity_logs").insert({
@@ -686,11 +651,9 @@ function init() {
   render();
   updateAuthUi();
 
-  $("search").addEventListener("input", (e) => { ui.search = e.target.value; renderGrid(); renderStats(); });
-  $("categoryFilter").addEventListener("change", (e) => { ui.category = e.target.value; render(); });
-  $("sortSelect").addEventListener("change", (e) => { ui.sort = e.target.value; renderGrid(); });
+  $("search").addEventListener("input", (e) => { ui.search = e.target.value; renderGrid(); });
 
-  $("addBtn").onclick = () => openActivityModal(null);
+  $("fab").onclick = () => openActivityModal(null);
   $("emptyAddBtn").onclick = () => openActivityModal(null);
   $("emptySampleBtn").onclick = loadSamples;
   $("activityForm").addEventListener("submit", saveActivityForm);

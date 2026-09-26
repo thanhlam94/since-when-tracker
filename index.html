@@ -43,30 +43,10 @@
     <input type="file" id="importFile" accept="application/json" hidden>
   </header>
 
-  <section class="stats-strip" id="statsStrip">
-    <div class="stat"><span class="stat-value" id="statActivities">0</span><span class="stat-label">activities</span></div>
-    <div class="stat"><span class="stat-value" id="statLogs">0</span><span class="stat-label">logs this week</span></div>
-    <div class="stat"><span class="stat-value" id="statOverdue">0</span><span class="stat-label">overdue</span></div>
-    <div class="stat"><span class="stat-value" id="statLongest">–</span><span class="stat-label">longest wait</span></div>
-  </section>
-
   <section class="controls">
     <div class="search-wrap">
       <input type="search" id="search" placeholder="🔍 Search activities…" autocomplete="off">
     </div>
-    <div class="control-row">
-      <select id="categoryFilter" aria-label="Filter by category">
-        <option value="">All categories</option>
-      </select>
-      <select id="sortSelect" aria-label="Sort activities">
-        <option value="elapsed-desc">⏳ Longest since first</option>
-        <option value="elapsed-asc">⚡ Most recent first</option>
-        <option value="name">🔤 A → Z</option>
-        <option value="count-desc">🔥 Most logged first</option>
-      </select>
-      <button id="addBtn" class="primary-btn">＋ New activity</button>
-    </div>
-    <div class="chips" id="categoryChips"></div>
   </section>
 
   <main>
@@ -83,6 +63,8 @@
   <footer class="footer">
     <span id="footerText">Sign in (👤 above) to sync your data across devices. Otherwise it stays in this browser.</span>
   </footer>
+
+  <button id="fab" class="fab" aria-label="Add activity"><span class="fab-plus">＋</span></button>
 </div>
 
 <!-- Sign-in modal -->

@@ -126,23 +126,7 @@ button, .chip, .icon-btn, .log-btn { touch-action: manipulation; }
 .menu button:hover { background: rgba(127, 127, 140, 0.16); }
 .menu button.danger { color: #ff453a; }
 
-/* ---------- Hero / stats ---------- */
-.hero { text-align: center; margin: 6px 0 20px; }
-.hero h1 { font-size: 30px; margin: 0; letter-spacing: -0.6px; font-weight: 800; font-family: var(--timer-font); }
-.hero p { color: var(--muted); margin: 6px 0 0; font-size: 14px; }
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
-.stat {
-  border-radius: 22px; padding: 14px 8px; text-align: center;
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  backdrop-filter: blur(28px) saturate(180%);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-inset), var(--glass-shadow);
-}
-.stat-value { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; font-family: var(--timer-font); }
-.stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-top: 3px; }
-
-/* ---------- Controls ---------- */
+/* ---------- Search ---------- */
 .controls { margin-bottom: 18px; }
 .search-wrap input {
   width: 100%; padding: 14px 18px; font-size: 16px; border-radius: 20px;
@@ -154,25 +138,6 @@ button, .chip, .icon-btn, .log-btn { touch-action: manipulation; }
 }
 .search-wrap input::placeholder { color: var(--muted); }
 .search-wrap input:focus { border-color: var(--accent); box-shadow: var(--glass-inset), 0 0 0 4px var(--accent-soft); }
-.control-row { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
-.control-row select {
-  padding: 11px 14px; border-radius: 16px; border: 1px solid var(--glass-border);
-  background: var(--glass-bg); color: var(--text); font-size: 16px; cursor: pointer;
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  backdrop-filter: blur(28px) saturate(180%);
-  box-shadow: var(--glass-inset);
-}
-.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.chip {
-  border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
-  color: var(--text); background: var(--glass-bg); border: 1px solid var(--glass-border);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  backdrop-filter: blur(20px) saturate(180%);
-  box-shadow: var(--glass-inset);
-  transition: transform 0.15s ease, background 0.2s ease;
-}
-.chip:active { transform: scale(0.95); }
-.chip.active { background: var(--accent); border-color: transparent; color: #fff; box-shadow: 0 6px 18px var(--accent-soft); }
 
 /* ---------- Activity cards ---------- */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 14px; }
@@ -190,6 +155,13 @@ button, .chip, .icon-btn, .log-btn { touch-action: manipulation; }
 @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(0.97); } }
 .card:hover { transform: translateY(-3px); }
 .card:active { transform: scale(0.98); }
+/* celebratory pulse right after logging */
+.card.just-logged { animation: logged-pulse 0.85s ease; }
+@keyframes logged-pulse {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.025); box-shadow: var(--glass-inset), 0 0 0 5px color-mix(in srgb, var(--card-color) 45%, transparent), var(--glass-shadow); }
+  100% { transform: scale(1); }
+}
 /* color-tinted top light leak */
 .card::before {
   content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
@@ -374,8 +346,6 @@ button, .chip, .icon-btn, .log-btn { touch-action: manipulation; }
 /* ---------- Small screens ---------- */
 @media (max-width: 560px) {
   .card-timer { font-size: 32px; }
-  .stats { grid-template-columns: repeat(2, 1fr); }
-  .hero h1 { font-size: 26px; }
   .detail-stats { grid-template-columns: repeat(2, 1fr); }
   .modal-backdrop { align-items: flex-end; }
 }
